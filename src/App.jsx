@@ -26,7 +26,8 @@ import {
   Eye,
   EyeOff,
   Menu,
-  Lock
+  Lock,
+  Download
 } from 'lucide-react';
 import { 
   subscribeToLinks, 
@@ -544,6 +545,13 @@ export default function App() {
               <span>Automações (Macros)</span>
             </div>
             <Lock size={12} style={{ color: 'var(--text-muted)' }} />
+          </div>
+          <div 
+            className={`nav-item ${activeTab === 'download' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('download'); setIsMobileMenuOpen(false); }}
+          >
+            <Download size={18} />
+            <span>Baixar App (APK)</span>
           </div>
           <div 
             className={`nav-item ${activeTab === 'configs' ? 'active' : ''}`}
@@ -1187,6 +1195,65 @@ export default function App() {
               <button className="btn btn-secondary" onClick={() => setActiveTab('dashboard')} style={{ fontSize: '0.85rem' }}>
                 Voltar ao Dashboard
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* DOWNLOAD APP TAB */}
+        {activeTab === 'download' && (
+          <div className="animate-fade-in" style={{ maxWidth: '700px', margin: '0 auto' }}>
+            <div style={{ marginBottom: '2rem' }}>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: '800' }}>Baixar Aplicativo Android</h2>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Instale o cliente oficial no terminal para exibir suas sinalizações</p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+              <div className="glass-panel glowing-red" style={{ padding: '2.5rem 2rem', textAlign: 'center', background: 'rgba(229, 62, 62, 0.02)' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: 'var(--accent-red)', marginBottom: '1.25rem' }}>
+                  <Smartphone size={28} />
+                </div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '0.5rem' }}>SlidePages Kiosk Client</h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '450px', margin: '0 auto 1.5rem auto', lineHeight: '1.5' }}>
+                  Acesse esta página do painel diretamente no seu dispositivo Android (TV Box, TV Smart, Tablet ou Celular) para baixar e instalar o aplicativo facilmente.
+                </p>
+                <a 
+                  href="/slidepages.apk" 
+                  download="slidepages.apk"
+                  className="btn btn-primary"
+                  style={{ display: 'inline-flex', textDecoration: 'none', height: '42px', padding: '0 2rem', fontSize: '0.9rem', boxShadow: 'var(--accent-red-glow)', alignItems: 'center' }}
+                >
+                  <Download size={16} /> Baixar Arquivo APK
+                </a>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+                  Arquivo: <code>slidepages.apk</code> • Compatível com Android 8.0 ou superior
+                </p>
+              </div>
+
+              <div className="glass-panel" style={{ padding: '1.5rem' }}>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: '800', marginBottom: '1rem', textTransform: 'uppercase', color: 'var(--text-primary)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                  Guia de Instalação Passo a Passo
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.82rem', lineHeight: '1.5' }}>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '22px', height: '22px', borderRadius: '50%', background: 'rgba(229, 62, 62, 0.1)', color: 'var(--accent-red)', fontWeight: '700', fontSize: '0.75rem' }}>1</div>
+                    <div>
+                      <strong>Permissões de instalação:</strong> Nas configurações do seu dispositivo Android, ative a opção de instalar aplicativos de "Fontes Desconhecidas" nas permissões do navegador.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '22px', height: '22px', borderRadius: '50%', background: 'rgba(229, 62, 62, 0.1)', color: 'var(--accent-red)', fontWeight: '700', fontSize: '0.75rem' }}>2</div>
+                    <div>
+                      <strong>Instale o APK:</strong> Abra o arquivo baixado e confirme a instalação no seu terminal.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '22px', height: '22px', borderRadius: '50%', background: 'rgba(229, 62, 62, 0.1)', color: 'var(--accent-red)', fontWeight: '700', fontSize: '0.75rem' }}>3</div>
+                    <div>
+                      <strong>Pareamento:</strong> Ao abrir o app, anote o <strong>ID do dispositivo</strong> exibido na tela de configurações. Copie este ID e cole no painel admin para iniciar o controle remoto em tempo real.
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
