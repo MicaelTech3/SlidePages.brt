@@ -27,7 +27,10 @@ import {
   EyeOff,
   Menu,
   Lock,
-  Download
+  Download,
+  LogOut,
+  Tv2,
+  LinkIcon as LinkIcon2
 } from 'lucide-react';
 import { 
   subscribeToLinks, 
@@ -40,20 +43,60 @@ import {
   updateMacro, 
   deleteMacro, 
   subscribeToDeviceState, 
-  sendDeviceCommand 
+  sendDeviceCommand,
+  broadcastCommand,
+  onAuthChange,
+  logoutUser,
+  subscribeToUserDevices,
+  linkDeviceCode,
+  unlinkDeviceCode
 } from './firebaseService';
+import LoginPage from './LoginPage';
 import logoImg from './logo.png';
 
 export default function App() {
+  // Auth state
+  const [user, setUser] = useState(undefined); // undefined = loading, null = not logged in
+
+  useEffect(() => {
+    const unsub = onAuthChange((u) => setUser(u));
+    return unsub;
+  }, []);
+
+  // Show loading spinner while auth resolves
+  if (user === undefined) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0c0c10', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: '36px', height: '36px', border: '3px solid rgba(229,62,62,0.3)', borderTopColor: '#E53E3E', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!user) return <LoginPage />;
+
+  // Authenticated app
+  return <AuthenticatedApp user={user} />;
+}
+
+function AuthenticatedApp({ user }) {
+  const uid = user.uid;
+
   // Controle de Abas (SPA)
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'links' | 'macros' | 'configs'
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Configuração do Dispositivo
+  // Configuração do Dispositivo (code agora é 5 chars)
   const [deviceId, setDeviceId] = useState(() => {
-    return localStorage.getItem('slidepages_device_id') || 'tv-sala-espera';
+    return localStorage.getItem('slidepages_device_id') || '';
   });
   const [tempDeviceId, setTempDeviceId] = useState(deviceId);
+  // Linked devices list
+  const [linkedDevices, setLinkedDevices] = useState([]);
+  const [newDeviceCode, setNewDeviceCode] = useState('');
+  // Multi-device broadcast selection
+  const [selectedDevices, setSelectedDevices] = useState(new Set()); // Set of device codes
+  const [broadcastMode, setBroadcastMode] = useState(false);
   const [deviceState, setDeviceState] = useState(null);
   
   // Dados do Firestore
@@ -105,6 +148,7 @@ export default function App() {
     setConnectionStatus('connecting');
     
     const unsubscribeLinks = subscribeToLinks(
+      uid,
       (data) => {
         setLinks(data);
         setLoading(prev => ({ ...prev, links: false }));
@@ -117,6 +161,7 @@ export default function App() {
     );
 
     const unsubscribeMacros = subscribeToMacros(
+      uid,
       (data) => {
         setMacros(data);
         setLoading(prev => ({ ...prev, macros: false }));
@@ -126,28 +171,32 @@ export default function App() {
       }
     );
 
+    const unsubscribeDevices = subscribeToUserDevices(
+      uid,
+      (data) => setLinkedDevices(data),
+      (err) => console.error("Erro na escuta de devices:", err)
+    );
+
     return () => {
       unsubscribeLinks();
       unsubscribeMacros();
+      unsubscribeDevices();
     };
-  }, []);
+  }, [uid]);
 
   // Monitoramento do dispositivo
   useEffect(() => {
-    if (!deviceId) return;
+    if (!deviceId || !uid) return;
     
     const unsubscribeDevice = subscribeToDeviceState(
+      uid,
       deviceId,
-      (state) => {
-        setDeviceState(state);
-      },
-      (error) => {
-        console.error("Erro na escuta do dispositivo:", error);
-      }
+      (state) => setDeviceState(state),
+      (error) => console.error("Erro na escuta do dispositivo:", error)
     );
 
     return () => unsubscribeDevice();
-  }, [deviceId]);
+  }, [uid, deviceId]);
 
   useEffect(() => {
     if (deviceState && inspectingField && deviceState.selectedField === inspectingField) {
@@ -227,10 +276,10 @@ export default function App() {
 
     try {
       if (editingLink) {
-        await updateLink(editingLink.id, payload);
+        await updateLink(uid, editingLink.id, payload);
       } else {
         const maxOrder = links.reduce((max, item) => item.order > max ? item.order : max, -1);
-        await addLink({ ...payload, order: maxOrder + 1 });
+        await addLink(uid, { ...payload, order: maxOrder + 1 });
       }
       setShowLinkForm(false);
       setEditingLink(null);
@@ -242,10 +291,10 @@ export default function App() {
   const handleDeleteLink = async (id) => {
     if (confirm("Deseja remover este link e suas automações?")) {
       try {
-        await deleteLink(id);
+        await deleteLink(uid, id);
         const associatedMacros = macros.filter(m => m.linkId === id);
         for (const macro of associatedMacros) {
-          await deleteMacro(macro.id);
+          await deleteMacro(uid, macro.id);
         }
       } catch (err) {
         alert("Erro ao remover link: " + err.message);
@@ -255,7 +304,7 @@ export default function App() {
 
   const handleToggleActive = async (link) => {
     try {
-      await updateLink(link.id, { active: !link.active });
+      await updateLink(uid, link.id, { active: !link.active });
     } catch (err) {
       console.error(err);
     }
@@ -264,11 +313,11 @@ export default function App() {
   const handleToggleFixed = async (link) => {
     const nextFixed = !link.fixed;
     try {
-      await updateLink(link.id, { fixed: nextFixed });
+      await updateLink(uid, link.id, { fixed: nextFixed });
       if (nextFixed) {
-        await sendDeviceCommand(deviceId, "fixPage", { targetLinkId: link.id });
+        await sendDeviceCommand(uid, deviceId, "fixPage", { targetLinkId: link.id });
       } else {
-        await sendDeviceCommand(deviceId, "play");
+        await sendDeviceCommand(uid, deviceId, "play");
       }
     } catch (err) {
       console.error(err);
@@ -289,7 +338,7 @@ export default function App() {
       return;
     }
     try {
-      await reorderLinks(newLinks);
+      await reorderLinks(uid, newLinks);
     } catch (err) {
       console.error("Erro ao reordenar:", err);
     }
@@ -298,7 +347,7 @@ export default function App() {
   const handleStartInspect = async (field) => {
     setInspectingField(field);
     try {
-      await sendDeviceCommand(deviceId, "inspect_field", {
+      await sendDeviceCommand(uid, deviceId, "inspect_field", {
         targetField: field,
         targetLinkId: editingLink?.id || ""
       });
@@ -310,7 +359,7 @@ export default function App() {
   const handleCycleInspect = async (direction) => {
     if (!inspectingField) return;
     try {
-      await sendDeviceCommand(deviceId, "cycle_field", {
+      await sendDeviceCommand(uid, deviceId, "cycle_field", {
         targetField: inspectingField,
         direction
       });
@@ -322,7 +371,7 @@ export default function App() {
   const handleConfirmInspect = async () => {
     if (!inspectingField) return;
     try {
-      await sendDeviceCommand(deviceId, "confirm_field", {
+      await sendDeviceCommand(uid, deviceId, "confirm_field", {
         targetField: inspectingField
       });
       setInspectingField(null);
@@ -334,7 +383,7 @@ export default function App() {
   const handleSendInspectValue = async () => {
     if (!inspectWriteVal) return;
     try {
-      await sendDeviceCommand(deviceId, "write_inspect_value", {
+      await sendDeviceCommand(uid, deviceId, "write_inspect_value", {
         value: inspectWriteVal,
         targetField: inspectingField
       });
@@ -349,7 +398,14 @@ export default function App() {
   
   const triggerCommand = async (action, extra = {}) => {
     try {
-      await sendDeviceCommand(deviceId, action, extra);
+      if (broadcastMode && selectedDevices.size > 0) {
+        // Send to all selected devices simultaneously
+        await broadcastCommand(uid, Array.from(selectedDevices), action, extra);
+      } else if (deviceId) {
+        await sendDeviceCommand(uid, deviceId, action, extra);
+      } else {
+        alert("Nenhum dispositivo selecionado.");
+      }
     } catch (err) {
       alert("Erro ao enviar comando: " + err.message);
     }
@@ -357,6 +413,66 @@ export default function App() {
 
   const handleGotoLink = async (linkId) => {
     await triggerCommand("goto", { targetLinkId: linkId });
+  };
+
+  // Toggle a device in/out of the broadcast selection
+  const toggleDeviceSelection = (code) => {
+    setSelectedDevices(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
+      return next;
+    });
+  };
+
+  // Select / Deselect all linked devices
+  const toggleSelectAll = () => {
+    if (selectedDevices.size === linkedDevices.length) {
+      setSelectedDevices(new Set());
+    } else {
+      setSelectedDevices(new Set(linkedDevices.map(d => d.code || d.id)));
+    }
+  };
+
+  // ==========================================
+  // DEVICE CODE MANAGEMENT
+  // ==========================================
+
+  const handleLinkDeviceCode = async (e) => {
+    e.preventDefault();
+    const code = newDeviceCode.toUpperCase().trim();
+    if (code.length < 1 || code.length > 5) {
+      alert("O código deve ter entre 1 e 5 caracteres.");
+      return;
+    }
+    try {
+      await linkDeviceCode(uid, code);
+      // Set as active device
+      setDeviceId(code);
+      localStorage.setItem('slidepages_device_id', code);
+      setNewDeviceCode('');
+    } catch (err) {
+      alert("Erro ao vincular código: " + err.message);
+    }
+  };
+
+  const handleUnlinkDevice = async (code) => {
+    if (confirm(`Desvincular o dispositivo "${code}"?`)) {
+      try {
+        await unlinkDeviceCode(uid, code);
+        if (deviceId === code) {
+          const remaining = linkedDevices.filter(d => d.code !== code);
+          const next = remaining[0]?.code || '';
+          setDeviceId(next);
+          localStorage.setItem('slidepages_device_id', next);
+        }
+      } catch (err) {
+        alert("Erro ao desvincular: " + err.message);
+      }
+    }
   };
 
   // ==========================================
@@ -440,9 +556,9 @@ export default function App() {
 
     try {
       if (editingMacro) {
-        await updateMacro(editingMacro.id, payload);
+        await updateMacro(uid, editingMacro.id, payload);
       } else {
-        await addMacro(payload);
+        await addMacro(uid, payload);
       }
       setSelectedLinkForMacro('');
       setMacroName('');
@@ -456,7 +572,7 @@ export default function App() {
   const handleDeleteMacro = async (macroId) => {
     if (confirm("Tem certeza que deseja deletar esta macro?")) {
       try {
-        await deleteMacro(macroId);
+        await deleteMacro(uid, macroId);
       } catch (err) {
         alert("Erro ao deletar macro: " + err.message);
       }
@@ -485,7 +601,14 @@ export default function App() {
         <button className="mobile-menu-btn" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
           {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
-        <span className="mobile-header-title">SlidePages Admin</span>
+        <span className="mobile-header-title">
+          {activeTab === 'dashboard' && 'Painel Geral'}
+          {activeTab === 'links' && 'Fila de Rotação'}
+          {activeTab === 'macros' && 'Automações (Macros)'}
+          {activeTab === 'download' && 'Baixar App (APK)'}
+          {activeTab === 'devices' && 'Dispositivos'}
+          {activeTab === 'configs' && 'Configurações'}
+        </span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
           <span className={`status-dot ${deviceState ? 'active' : 'inactive'}`} />
         </div>
@@ -554,6 +677,18 @@ export default function App() {
             <span>Baixar App (APK)</span>
           </div>
           <div 
+            className={`nav-item ${activeTab === 'devices' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('devices'); setIsMobileMenuOpen(false); }}
+          >
+            <Tv2 size={18} />
+            <span>Dispositivos</span>
+            {linkedDevices.length > 0 && (
+              <span style={{ marginLeft: 'auto', background: 'var(--accent-red)', color: '#fff', borderRadius: '10px', fontSize: '0.6rem', padding: '0 5px', fontWeight: '700' }}>
+                {linkedDevices.length}
+              </span>
+            )}
+          </div>
+          <div 
             className={`nav-item ${activeTab === 'configs' ? 'active' : ''}`}
             onClick={() => { setActiveTab('configs'); setIsMobileMenuOpen(false); }}
           >
@@ -562,12 +697,12 @@ export default function App() {
           </div>
         </nav>
 
-        {/* SUMMARY DEVICE CARD NO FOOTER DA SIDEBAR */}
+        {/* SIDEBAR FOOTER */}
         <div className="sidebar-footer">
           <div className="sidebar-device-card">
             <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Terminal Ativo</p>
             <p style={{ fontSize: '0.8rem', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)', marginTop: '0.15rem' }}>
-              {deviceId}
+              {deviceId || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Nenhum vinculado</span>}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.7rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Status:</span>
@@ -575,6 +710,20 @@ export default function App() {
                 {deviceState ? deviceState.action : 'OFFLINE'}
               </span>
             </div>
+          </div>
+          {/* User info + logout */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', padding: '0.5rem 0', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase' }}>Conta</p>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</p>
+            </div>
+            <button
+              onClick={() => logoutUser()}
+              title="Sair"
+              style={{ background: 'rgba(229,62,62,0.1)', border: '1px solid rgba(229,62,62,0.2)', borderRadius: '6px', padding: '0.35rem', cursor: 'pointer', color: 'var(--accent-red)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <LogOut size={14} />
+            </button>
           </div>
         </div>
       </aside>
@@ -611,93 +760,155 @@ export default function App() {
               {/* LADO ESQUERDO: FILA E MONITOR */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 
-                {/* STATUS DOS DISPOSITIVOS */}
+                {/* ─── CONTROLE MULTI-DISPOSITIVO ─── */}
                 <div className="glass-panel glowing-red" style={{ padding: '1.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: '700' }}>
-                      Dispositivo Conectado
-                    </h3>
-                    {/* Inline device ID changer */}
-                    <form
-                      onSubmit={(e) => { e.preventDefault(); const val = e.target.elements.inlineDevId.value.trim(); if (val) { setDeviceId(val); localStorage.setItem('slidepages_device_id', val); } }}
-                      style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}
+                  
+                  {/* Header row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1rem', fontWeight: '700' }}>Central de Controle</h3>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
+                        {broadcastMode
+                          ? `Modo Broadcast — ${selectedDevices.size} de ${linkedDevices.length} TV(s) selecionada(s)`
+                          : `Controlando: ${deviceId || 'Nenhum selecionado'}`}
+                      </p>
+                    </div>
+
+                    {/* Broadcast mode toggle */}
+                    <button
+                      onClick={() => setBroadcastMode(b => !b)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                        padding: '0.45rem 0.9rem', borderRadius: '20px', fontSize: '0.78rem',
+                        fontWeight: '700', cursor: 'pointer', border: '1.5px solid',
+                        transition: 'all 0.2s ease',
+                        background: broadcastMode ? 'rgba(229,62,62,0.15)' : 'rgba(255,255,255,0.04)',
+                        borderColor: broadcastMode ? 'var(--accent-red)' : 'var(--border-color)',
+                        color: broadcastMode ? 'var(--accent-red)' : 'var(--text-secondary)',
+                        boxShadow: broadcastMode ? 'var(--accent-red-glow)' : 'none'
+                      }}
                     >
-                      <input
-                        name="inlineDevId"
-                        type="text"
-                        defaultValue={deviceId}
-                        placeholder="ID do dispositivo (ex: stp-abc12345)"
-                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', width: '220px', fontFamily: 'monospace', letterSpacing: '0.05em' }}
-                      />
-                      <button type="submit" className="btn btn-primary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.72rem', height: 'auto' }}>
-                        Conectar
-                      </button>
-                    </form>
+                      <Tv2 size={14} />
+                      {broadcastMode ? '📡 Broadcast ATIVO' : 'Ativar Broadcast'}
+                    </button>
                   </div>
 
-                  {!deviceState && (
-                    <div style={{
-                      background: 'rgba(251,146,60,0.12)',
-                      border: '1.5px solid #f97316',
-                      borderRadius: '8px',
-                      padding: '0.85rem 1rem',
-                      marginBottom: '1rem',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '0.6rem'
-                    }}>
-                      <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>⚠️</span>
-                      <div>
-                        <p style={{ fontSize: '0.8rem', fontWeight: '700', color: '#f97316', marginBottom: '0.2rem' }}>
-                          Nenhum sinal do dispositivo com ID <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0 4px', borderRadius: 3 }}>{deviceId}</code>
-                        </p>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                          Verifique o ID exibido na tela de <strong>Configurações</strong> do App Android e cole acima. O botão <strong>"Exibir Agora"</strong> e a inspeção de campos só funcionam quando o ID é o mesmo que o App gerou.
-                        </p>
+                  {/* Device selection grid */}
+                  {linkedDevices.length === 0 ? (
+                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '1rem' }}>
+                      Nenhuma TV vinculada. Vá em <strong>Dispositivos</strong> para adicionar.
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      {/* Select all row */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedDevices.size === linkedDevices.length && linkedDevices.length > 0}
+                            onChange={toggleSelectAll}
+                            style={{ accentColor: 'var(--accent-red)', width: '14px', height: '14px' }}
+                          />
+                          Selecionar todas as TVs
+                        </label>
+                        {selectedDevices.size > 0 && (
+                          <span className="badge badge-red">{selectedDevices.size} selecionada(s)</span>
+                        )}
+                      </div>
+
+                      {/* Device cards */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                        {linkedDevices.map(device => {
+                          const code = device.code || device.id;
+                          const isActive = deviceId === code;
+                          const isSelected = selectedDevices.has(code);
+                          return (
+                            <div
+                              key={code}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '0.75rem',
+                                padding: '0.6rem 0.9rem', borderRadius: '8px', cursor: 'pointer',
+                                border: `1.5px solid ${isSelected ? 'rgba(229,62,62,0.5)' : isActive ? 'rgba(255,255,255,0.08)' : 'var(--border-color)'}`,
+                                background: isSelected ? 'rgba(229,62,62,0.06)' : 'rgba(255,255,255,0.02)',
+                                transition: 'all 0.15s ease'
+                              }}
+                              onClick={() => {
+                                toggleDeviceSelection(code);
+                                if (!broadcastMode) {
+                                  setDeviceId(code);
+                                  localStorage.setItem('slidepages_device_id', code);
+                                }
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {}}
+                                onClick={e => e.stopPropagation()}
+                                style={{ accentColor: 'var(--accent-red)', width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }}
+                              />
+                              <Tv2 size={14} style={{ color: isSelected ? 'var(--accent-red)' : 'var(--text-muted)', flexShrink: 0 }} />
+                              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '700', fontSize: '0.9rem', letterSpacing: '0.1em', color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                                {code}
+                              </span>
+                              {isActive && !broadcastMode && (
+                                <span className="badge badge-green" style={{ fontSize: '0.58rem', marginLeft: 'auto' }}>ATIVO</span>
+                              )}
+                              {isSelected && broadcastMode && (
+                                <span className="badge badge-red" style={{ fontSize: '0.58rem', marginLeft: 'auto' }}>📡</span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
 
-                  {deviceState ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem' }}>
-                      <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.15)' }}>
-                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>AÇÃO ATIVA</p>
-                        <p style={{ fontSize: '1.2rem', fontWeight: '800', color: 'var(--accent-red)', textTransform: 'uppercase', marginTop: '0.2rem' }}>{deviceState.action}</p>
+                  {/* Status do dispositivo principal (somente fora do modo broadcast) */}
+                  {!broadcastMode && deviceState && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                      <div className="glass-panel" style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.15)' }}>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>AÇÃO ATIVA</p>
+                        <p style={{ fontSize: '1.1rem', fontWeight: '800', color: 'var(--accent-red)', textTransform: 'uppercase', marginTop: '0.15rem' }}>{deviceState.action}</p>
                       </div>
-                      <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.15)' }}>
-                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>TELA CARREGADA</p>
-                        <p 
-                          style={{ fontSize: '0.85rem', fontWeight: '700', marginTop: '0.4rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                          title={deviceState.targetLinkId ? getLinkUrlById(deviceState.targetLinkId) : 'Rotação Livre'}
-                        >
+                      <div className="glass-panel" style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.15)' }}>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>TELA CARREGADA</p>
+                        <p style={{ fontSize: '0.8rem', fontWeight: '700', marginTop: '0.15rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          title={deviceState.targetLinkId ? getLinkUrlById(deviceState.targetLinkId) : 'Rotação Livre'}>
                           {deviceState.targetLinkId ? getLinkUrlById(deviceState.targetLinkId) : 'Rotação Livre'}
                         </p>
                       </div>
-                      <div className="glass-panel" style={{ padding: '1rem', background: 'rgba(0,0,0,0.15)' }}>
-                        <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>ÚLTIMO SINAL</p>
-                        <p style={{ fontSize: '0.85rem', fontWeight: '700', marginTop: '0.4rem' }}>
+                      <div className="glass-panel" style={{ padding: '0.85rem', background: 'rgba(0,0,0,0.15)' }}>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 'bold' }}>ÚLTIMO SINAL</p>
+                        <p style={{ fontSize: '0.8rem', fontWeight: '700', marginTop: '0.15rem' }}>
                           {deviceState.updatedAt ? new Date(deviceState.updatedAt.seconds * 1000).toLocaleTimeString('pt-BR') : 'Sem sinal'}
                         </p>
                       </div>
                     </div>
-                  ) : (
-                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                      Aguardando sinal...
+                  )}
+
+                  {/* Broadcast hint */}
+                  {broadcastMode && selectedDevices.size > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', padding: '0.6rem 0.9rem', background: 'rgba(229,62,62,0.08)', border: '1px solid rgba(229,62,62,0.2)', borderRadius: '8px' }}>
+                      <span style={{ fontSize: '1rem' }}>📡</span>
+                      <p style={{ fontSize: '0.78rem', color: '#fca5a5' }}>
+                        Os comandos abaixo serão enviados simultaneamente para <strong>{selectedDevices.size}</strong> TV(s).
+                      </p>
                     </div>
                   )}
 
-                  {/* CONTROLES DO DISPOSITIVO */}
-                  <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
-                    <button className="btn btn-primary" onClick={() => triggerCommand("play")} style={{ flex: '1', minWidth: '130px' }}>
+                  {/* CONTROLES */}
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <button className="btn btn-primary" onClick={() => triggerCommand("play")} style={{ flex: '1', minWidth: '120px' }}>
                       <Play size={14} /> Play
                     </button>
-                    <button className="btn btn-secondary" onClick={() => triggerCommand("pause")} style={{ flex: '1', minWidth: '130px', borderColor: 'rgba(229,62,62,0.3)', color: 'var(--accent-red)' }}>
+                    <button className="btn btn-secondary" onClick={() => triggerCommand("pause")} style={{ flex: '1', minWidth: '120px', borderColor: 'rgba(229,62,62,0.3)', color: 'var(--accent-red)' }}>
                       <Pause size={14} /> Pause
                     </button>
-                    <button className="btn btn-secondary" onClick={() => triggerCommand("reload")} style={{ flex: '1', minWidth: '130px' }}>
+                    <button className="btn btn-secondary" onClick={() => triggerCommand("reload")} style={{ flex: '1', minWidth: '120px' }}>
                       <RefreshCw size={14} /> Recarregar
                     </button>
-                    <button className="btn btn-danger" onClick={() => triggerCommand("newPath")} style={{ flex: '1', minWidth: '130px' }} title="Resetar cookies/cache do WebView">
+                    <button className="btn btn-danger" onClick={() => triggerCommand("newPath")} style={{ flex: '1', minWidth: '120px' }} title="Resetar cookies/cache do WebView">
                       <Compass size={14} /> Resetar Cache
                     </button>
                   </div>
@@ -1038,7 +1249,7 @@ export default function App() {
                           type="button"
                           className="btn btn-secondary"
                           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', fontSize: '0.78rem' }}
-                          onClick={() => sendDeviceCommand(deviceId, 'detect_page_elements')}
+                          onClick={() => sendDeviceCommand(uid, deviceId, 'detect_page_elements')}
                           title="Escanear todos os elementos clicáveis da tela atual no App"
                         >
                           <Terminal size={13} style={{ color: 'var(--accent-red)' }} />
@@ -1074,9 +1285,9 @@ export default function App() {
                                       } : {})
                                     }}
                                     title={`${isSubmit ? '🔵 Botão de Login/Submit — ' : ''}${el.selector}\nClique duplo para clicar no App`}
-                                    onClick={() => sendDeviceCommand(deviceId, 'select_detected_element', { selector: el.selector })}
+                                    onClick={() => sendDeviceCommand(uid, deviceId, 'select_detected_element', { selector: el.selector })}
                                     onDoubleClick={async () => {
-                                      await sendDeviceCommand(deviceId, 'click_detected_element', { selector: el.selector });
+                                      await sendDeviceCommand(uid, deviceId, 'click_detected_element', { selector: el.selector });
                                       // Auto-save as submitSelector if it looks like a login button
                                       if (isSubmit) {
                                         setLinkForm(prev => ({ ...prev, submitSelector: el.selector }));
@@ -1140,11 +1351,13 @@ export default function App() {
                           </button>
                         </div>
 
-                        <div style={{ overflow: 'hidden' }}>
-                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                            <span style={{ fontWeight: '700', fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '400px' }}>{link.url}</span>
-                            {link.fixed && <span className="badge badge-red">FIXADO</span>}
-                            {!link.active && <span className="badge">INATIVO</span>}
+                        <div style={{ overflow: 'hidden', flex: '1', minWidth: 0 }}>
+                          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: '700', fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1', minWidth: 0 }} title={link.url}>{link.url}</span>
+                            <div style={{ display: 'flex', gap: '0.3rem' }}>
+                              {link.fixed && <span className="badge badge-red">FIXADO</span>}
+                              {!link.active && <span className="badge">INATIVO</span>}
+                            </div>
                           </div>
                           <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                             <span>Intervalo: <strong>{link.intervalSeconds}s</strong></span>
@@ -1195,6 +1408,91 @@ export default function App() {
               <button className="btn btn-secondary" onClick={() => setActiveTab('dashboard')} style={{ fontSize: '0.85rem' }}>
                 Voltar ao Dashboard
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* DISPOSITIVOS TAB */}
+        {activeTab === 'devices' && (
+          <div className="animate-fade-in" style={{ maxWidth: '700px' }}>
+            <div style={{ marginBottom: '2rem' }}>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: '800' }}>Dispositivos Vinculados</h2>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Gerencie os códigos de 5 caracteres que conectam cada TV Box / Smart TV ao seu painel.
+              </p>
+            </div>
+
+            {/* ADD NEW CODE */}
+            <div className="glass-panel glowing-red" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.4rem' }}>Vincular Novo Dispositivo</h3>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.5 }}>
+                No App Android, abra <strong>Configurações</strong> e anote o código de 5 letras exibido.
+                Cole aqui e clique em <strong>Vincular</strong>. O App conecta automaticamente.
+              </p>
+              <form onSubmit={handleLinkDeviceCode} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  maxLength={5}
+                  value={newDeviceCode}
+                  onChange={e => setNewDeviceCode(e.target.value.toUpperCase())}
+                  placeholder="Ex: AB3K7"
+                  required
+                  style={{ flex: 1, fontFamily: 'monospace', fontSize: '1.1rem', letterSpacing: '0.15em', textTransform: 'uppercase', textAlign: 'center', fontWeight: '700' }}
+                />
+                <button type="submit" className="btn btn-primary" style={{ height: '42px', padding: '0 1.5rem' }}>
+                  Vincular
+                </button>
+              </form>
+            </div>
+
+            {/* LINKED DEVICES LIST */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {linkedDevices.length === 0 ? (
+                <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  Nenhum dispositivo vinculado ainda. Use o formulário acima para adicionar.
+                </div>
+              ) : linkedDevices.map(device => (
+                <div key={device.id} className="glass-panel" style={{
+                  padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem',
+                  border: deviceId === device.code ? '1px solid rgba(229,62,62,0.4)' : '1px solid var(--border-color)',
+                  background: deviceId === device.code ? 'rgba(229,62,62,0.04)' : undefined
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(229,62,62,0.08)', flexShrink: 0 }}>
+                    <Tv2 size={20} style={{ color: 'var(--accent-red)' }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: '800', letterSpacing: '0.12em', color: '#fff' }}>
+                        {device.code}
+                      </span>
+                      {deviceId === device.code && (
+                        <span className="badge badge-green" style={{ fontSize: '0.6rem' }}>ATIVO</span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                      Vinculado em {device.linkedAt?.toDate ? device.linkedAt.toDate().toLocaleDateString('pt-BR') : '—'}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {deviceId !== device.code && (
+                      <button
+                        className="btn btn-secondary"
+                        style={{ padding: '0.3rem 0.7rem', fontSize: '0.72rem', height: 'auto' }}
+                        onClick={() => { setDeviceId(device.code); localStorage.setItem('slidepages_device_id', device.code); }}
+                      >
+                        Selecionar
+                      </button>
+                    )}
+                    <button
+                      className="btn btn-secondary"
+                      style={{ padding: '0.3rem 0.7rem', fontSize: '0.72rem', height: 'auto', borderColor: 'rgba(229,62,62,0.3)', color: 'var(--accent-red)' }}
+                      onClick={() => handleUnlinkDevice(device.code)}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

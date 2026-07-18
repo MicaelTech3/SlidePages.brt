@@ -1,9 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 
-// Configurações do Firebase com suporte a variáveis de ambiente (.env)
-// e fallback para os valores padrões fornecidos.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyB08qitALH0mNWU4miRttF_qxcuab3d5JU",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "slidepages-rbt.firebaseapp.com",
@@ -14,9 +13,9 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-FJ3TP30V7T"
 };
 
-// Inicialização
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 let analytics = null;
 if (typeof window !== "undefined" && firebaseConfig.measurementId) {
@@ -27,5 +26,5 @@ if (typeof window !== "undefined" && firebaseConfig.measurementId) {
   }
 }
 
-export { db, analytics };
+export { db, auth, analytics };
 export default app;

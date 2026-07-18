@@ -4,20 +4,20 @@
   --bg-sidebar: #131319;
   --bg-card: rgba(23, 23, 31, 0.7);
   --bg-glass: rgba(18, 18, 26, 0.8);
-  
+
   --border-color: rgba(255, 255, 255, 0.06);
   --border-glow: rgba(229, 62, 62, 0.4);
   --border-active: rgba(229, 62, 62, 0.6);
-  
+
   --text-primary: #f3f4f6;
   --text-secondary: #9ca3af;
   --text-muted: #6b7280;
-  
+
   --accent-red: #e53e3e;
   --accent-red-hover: #f56565;
   --accent-green: #10b981;
   --accent-red-glow: 0 0 12px rgba(229, 62, 62, 0.35);
-  
+
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
@@ -44,13 +44,16 @@ body {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: var(--bg-primary);
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-red);
 }
@@ -82,6 +85,17 @@ body {
   padding: 2rem;
   background-color: var(--bg-primary);
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Generic space-between row helper (used across tabs/headers) */
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 /* Logo container */
@@ -158,6 +172,7 @@ body {
   border-radius: 10px;
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 100%;
 }
 
 .glass-panel:hover {
@@ -201,6 +216,8 @@ textarea {
   outline: none;
   transition: all 0.2s ease;
   width: 100%;
+  /* Prevent iOS auto-zoom on focus (inputs < 16px trigger zoom) */
+  font-size: max(0.9rem, 16px);
 }
 
 input:focus,
@@ -229,6 +246,7 @@ input::placeholder {
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .btn-primary {
@@ -282,6 +300,7 @@ input::placeholder {
   background: transparent;
   border: none;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .btn-icon:hover {
@@ -291,8 +310,15 @@ input::placeholder {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .animate-fade-in {
@@ -311,6 +337,7 @@ input::placeholder {
   border: 1px solid var(--border-color);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .badge-red {
@@ -361,7 +388,7 @@ input::placeholder {
 }
 
 .sidebar-device-card {
-  background: rgba(255,255,255,0.02);
+  background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.75rem;
@@ -398,7 +425,25 @@ input::placeholder {
   gap: 1.5rem;
 }
 
-/* Responsive Link Item */
+/* ============================================
+   LINKS QUEUE PAGE — dedicated responsive rules
+   ============================================ */
+
+/* Header of the Links page (title + "Add link" button) */
+.links-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.links-page-header .btn {
+  flex-shrink: 0;
+}
+
+/* Each link card in the queue list */
 .link-item-row {
   display: flex;
   align-items: center;
@@ -406,6 +451,64 @@ input::placeholder {
   gap: 1rem;
 }
 
+/* Reorder controls (up/down arrows + index number) */
+.link-reorder-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Main info block: url + badges + meta */
+.link-info-block {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.link-info-top {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.link-info-url {
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.link-info-meta {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
+.link-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.link-actions .divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-color);
+  margin: 0 0.25rem;
+}
+
+/* Responsive Link Item */
 .link-actions {
   display: flex;
   align-items: center;
@@ -435,7 +538,7 @@ input::placeholder {
     z-index: 99;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   }
-  
+
   .mobile-menu-btn {
     background: transparent;
     border: none;
@@ -448,28 +551,28 @@ input::placeholder {
     margin-right: 0.75rem;
     border-radius: 6px;
   }
-  
+
   .mobile-menu-btn:hover {
     background: rgba(255, 255, 255, 0.05);
   }
-  
+
   .mobile-header-title {
     font-size: 1rem;
     font-weight: 800;
     color: var(--text-primary);
   }
-  
+
   .sidebar {
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     width: 280px;
     box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
   }
-  
+
   .sidebar.open {
     transform: translateX(0);
   }
-  
+
   .sidebar-backdrop {
     display: block;
     position: fixed;
@@ -481,28 +584,105 @@ input::placeholder {
     backdrop-filter: blur(4px);
     z-index: 98;
   }
-  
+
   .main-content {
     margin-left: 0;
     padding: 1.25rem;
     padding-top: calc(60px + 1.25rem);
   }
-  
+
+  /* --- Links page header stacks and button goes full width --- */
+  .links-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+  }
+
+  .links-page-header .btn {
+    width: 100%;
+  }
+
+  /* --- Link card becomes a stacked card on mobile --- */
   .link-item-row {
     flex-direction: column;
     align-items: stretch;
     gap: 0.75rem;
+    padding: 1rem !important;
   }
-  
+
+  /* Top row inside the card: reorder controls + info side by side */
+  .link-item-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+  }
+
+  .link-reorder-controls {
+    flex-direction: row;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    padding: 0.15rem 0.35rem;
+  }
+
+  .link-info-url {
+    font-size: 1rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Actions become a full-width, evenly spaced button grid — easy to tap */
   .link-actions {
-    justify-content: flex-end;
+    justify-content: stretch;
     border-top: 1px solid var(--border-color);
     padding-top: 0.75rem;
     width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
   }
-  
-  .link-actions > .btn-icon {
-    padding: 0.5rem;
+
+  .link-actions .btn {
+    width: 100%;
+  }
+
+  .link-actions .divider {
+    display: none;
+  }
+
+  .link-actions .icon-actions-row {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    margin-top: 0.15rem;
+  }
+
+  .link-actions .icon-actions-row .btn-icon {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Credential inspection rows: keep input+selector stacked, icon button becomes a proper square button, not stretched */
+  .responsive-row {
+    flex-wrap: wrap;
+  }
+
+  .responsive-row>div {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .responsive-row>button.btn-icon,
+  .responsive-row>button[title] {
+    flex: 0 0 auto;
+    width: 44px !important;
+    height: 44px !important;
   }
 }
 
@@ -512,17 +692,15 @@ input::placeholder {
     align-items: stretch;
     margin-bottom: 1.25rem;
   }
-  
-  .responsive-row > div {
+
+  .responsive-row>div {
     width: 100%;
   }
-  
-  .responsive-row > button {
+
+  .responsive-row>button {
     align-self: flex-end;
-    width: 100% !important;
-    height: 38px !important;
   }
-  
+
   .form-grid-2 {
     grid-template-columns: 1fr;
     gap: 1rem;
