@@ -622,7 +622,7 @@ function AuthenticatedApp({ user }) {
       {/* SIDEBAR NAVEGAÇÃO SPA */}
       <aside className={`sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
         
-        {/* LOGO CORPORATIVO RBT */}
+        {/* LOGO CORPORATIVO RBT
         <div className="logo-container">
           {logoFailed ? (
             <div className="logo-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--accent-red)', color: '#fff', fontWeight: '900', fontSize: '1rem', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -641,6 +641,7 @@ function AuthenticatedApp({ user }) {
             <span className="logo-subtext">SlidePages Admin</span>
           </div>
         </div>
+        */}
 
         {/* MENU */}
         <nav className="nav-menu">
